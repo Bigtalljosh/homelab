@@ -2,16 +2,16 @@ version: "3.8"
 services:
 
 # Container management GUI
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    ports:
-        - 8000:8000
-        - 9000:9000
-    volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-        - ${DOCKERCONFDIR}/portainer:/data
-    restart: unless-stopped
+  # portainer:
+  #   image: portainer/portainer-ce:latest
+  #   container_name: portainer
+  #   ports:
+  #       - 8000:8000
+  #       - 9000:9000
+  #   volumes:
+  #       - /var/run/docker.sock:/var/run/docker.sock
+  #       - ${DOCKERCONFDIR}/portainer:/data
+  #   restart: unless-stopped
 
   # Reverse proxy
   swag:
@@ -36,6 +36,54 @@ services:
       - 443:443
       - 80:80
     restart: unless-stopped
+
+  #home assist
+  homeassistant:
+    image: lscr.io/linuxserver/homeassistant:latest
+    container_name: homeassistant
+    network_mode: host
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/homeassistant:/config
+    ports:
+      - 8123:8123 #optional
+    #devices:
+    #  - /path/to/device:/path/to/device #optional
+    restart: unless-stopped
+
+  #overseerr for media discovery
+  overseerr:
+    image: sctx/overseerr:latest
+    container_name: overseerr
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=${TZ}
+      - PORT=5055 #optional
+    ports:
+      - 5055:5055
+    volumes:
+      - ${DOCKERCONFDIR}/overseerr:/app/config
+    restart: unless-stopped
+
+  # emulator https://docs.linuxserver.io/images/docker-emulatorjs/
+  # emulatorjs:
+  #   image: lscr.io/linuxserver/emulatorjs:latest
+  #   container_name: emulatorjs
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #   volumes:
+  #     - ${DOCKERCONFDIR}/emulatorjs:/config
+  #     - ${DOCKERSTORAGEDIR}/games:/data
+  #   ports:
+  #     - 3000:3000
+  #     - 80:80
+  #     - 4001:4001 #optional
+  #   restart: unless-stopped
 
   #yt dl
   youtube-dl:
