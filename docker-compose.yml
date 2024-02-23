@@ -2,40 +2,40 @@ version: "3.8"
 services:
 
 # Container management GUI
-  # portainer:
-  #   image: portainer/portainer-ce:latest
-  #   container_name: portainer
-  #   ports:
-  #       - 8000:8000
-  #       - 9000:9000
-  #   volumes:
-  #       - /var/run/docker.sock:/var/run/docker.sock
-  #       - ${DOCKERCONFDIR}/portainer:/data
-  #   restart: unless-stopped
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+        - 8000:8000
+        - 9000:9000
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - ${DOCKERCONFDIR}/portainer:/data
+    restart: unless-stopped
 
   # Reverse proxy
-  swag:
-    image: linuxserver/swag:latest
-    container_name: swag
-    cap_add:
-      - NET_ADMIN
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - URL=${DOMAIN}
-      - SUBDOMAINS=wildcard
-      - VALIDATION=dns
-      - DNSPLUGIN=cloudflare
-      - EMAIL=${EMAIL}
-      - DHLEVEL=2048 #optional
-      - ONLY_SUBDOMAINS=false #optional
-    volumes:
-      - ${DOCKERCONFDIR}/swag:/config
-    ports:
-      - 443:443
-      - 80:80
-    restart: unless-stopped
+  # swag:
+  #   image: linuxserver/swag:latest
+  #   container_name: swag
+  #   cap_add:
+  #     - NET_ADMIN
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #     - URL=${DOMAIN}
+  #     - SUBDOMAINS=wildcard
+  #     - VALIDATION=dns
+  #     - DNSPLUGIN=cloudflare
+  #     - EMAIL=${EMAIL}
+  #     - DHLEVEL=2048 #optional
+  #     - ONLY_SUBDOMAINS=false #optional
+  #   volumes:
+  #     - ${DOCKERCONFDIR}/swag:/config
+  #   ports:
+  #     - 443:443
+  #     - 80:80
+  #   restart: unless-stopped
 
   #home assist
   homeassistant:
@@ -236,7 +236,7 @@ services:
       volumes:
         - /etc/localtime:/etc/localtime:ro
         - ${DOCKERCONFDIR}/sabnzbd:/config
-        - ${DOCKERSTORAGEDIR}/usenet:/data/usenet:rw
+        - ${DOCKERSTORAGEDIR}/downloads/usenet:/data/usenet:rw
 
 # Plex
   plex:
@@ -266,7 +266,7 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/plex:/config:rw
-      - ${DOCKERSTORAGEDIR}/media:/data/media:rw
+      - ${DOCKERSTORAGEDIR}:/data/media:rw
 #    devices:                                        # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
 #      - /dev/dri:/dev/dri                           # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
 #    tmpfs:                                          # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
