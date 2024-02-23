@@ -177,6 +177,20 @@ services:
       - ${DOCKERCONFDIR}/bazarr:/config
       - ${DOCKERSTORAGEDIR}:/data/media
 
+  # prowlarr
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/prowlarr:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+
   # Torrent client
   transmission:
     # Pinned version due to issue with Ctrl+V
