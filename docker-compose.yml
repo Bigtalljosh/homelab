@@ -175,8 +175,8 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/bazarr:/config
-      - ${DOCKERSTORAGEDIR}:/data/media
-
+      - ${DOCKERSTORAGEDIR}/media:/data/media
+      
   # prowlarr
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
@@ -203,27 +203,11 @@ services:
       - TZ=${TZ}
     volumes:
       - ${DOCKERCONFDIR}/transmission:/config
-      - ${DOCKERSTORAGEDIR}/downloads/torrents:/downloads
+      - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
     ports:
       - 8003:9091
       - 51413:51413
       - 51413:51413/udp
-    restart: unless-stopped
-
-  # Torrent indexer proxy
-  jackett:
-    image: lscr.io/linuxserver/jackett:latest
-    container_name: jackett
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - AUTO_UPDATE=true #optional
-    volumes:
-      - ${DOCKERCONFDIR}/jackett:/config
-      - ${DOCKERSTORAGEDIR}/downloads/torrents:/downloads
-    ports:
-      - 8004:9117
     restart: unless-stopped
       
   # SABnzbd
@@ -250,7 +234,7 @@ services:
       volumes:
         - /etc/localtime:/etc/localtime:ro
         - ${DOCKERCONFDIR}/sabnzbd:/config
-        - ${DOCKERSTORAGEDIR}/downloads/usenet:/data/usenet:rw
+        - ${DOCKERSTORAGEDIR}/usenet:/data/usenet:rw
 
 # Plex
   plex:
@@ -280,8 +264,8 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/plex:/config:rw
-      - ${DOCKERSTORAGEDIR}:/data/media:rw
-#    devices:                                        # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
-#      - /dev/dri:/dev/dri                           # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
-#    tmpfs:                                          # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
-#      - /transcode                                  # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
+      - ${DOCKERSTORAGEDIR}/media:/data/media:rw
+    devices:                                        # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
+      - /dev/dri:/dev/dri                           # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
+    tmpfs:                                          # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
+      - /transcode                                  # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
