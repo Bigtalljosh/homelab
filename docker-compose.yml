@@ -243,9 +243,6 @@ services:
       - 8080:8080
       - 6881:6881
       - 6881:6881/udp
-    network_mode: service:vpn
-    depends_on:
-      - vpn
     restart: unless-stopped
       
   # SABnzbd
@@ -272,9 +269,6 @@ services:
         - /etc/localtime:/etc/localtime:ro
         - ${DOCKERCONFDIR}/sabnzbd:/config
         - ${DOCKERSTORAGEDIR}/usenet:/data/usenet:rw
-      network_mode: service:vpn
-      depends_on:
-        - vpn
 
 # Plex
   plex:
