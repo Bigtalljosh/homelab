@@ -1,17 +1,30 @@
 version: "3.8"
 services:
 
-# Container management GUI
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    ports:
-        - 8000:8000
-        - 9000:9000
-    volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-        - ${DOCKERCONFDIR}/portainer:/data
+  # Dashboard for all these apps
+  homarr:
+    container_name: homarr
+    image: ghcr.io/ajnart/homarr:latest
     restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # Optional, only if you want docker integration
+      - ${DOCKERCONFDIR}/homarr/configs:/app/data/configs
+      - ${DOCKERCONFDIR}/homarr/icons:/app/public/icons
+      - ${DOCKERCONFDIR}/homarr/data:/data
+    ports:
+      - '7575:7575'
+
+  # automatically synchronize recommended settings from the TRaSH guides to your Sonarr/Radarr instances
+  # recyclarr:
+  #   image: ghcr.io/recyclarr/recyclarr:latest
+  #   container_name: recyclarr
+  #   user: ${PUID}:${PGID}
+  #   volumes:
+  #     - ${DOCKERCONFDIR}/recyclarr/config:/config
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
 
   # Reverse proxy
   # swag:
@@ -191,24 +204,64 @@ services:
       - 9696:9696
     restart: unless-stopped
 
-  # Torrent client
-  transmission:
-    # Pinned version due to issue with Ctrl+V
-    # https://github.com/transmission/transmission/issues/5298
-    image: lscr.io/linuxserver/transmission:4.0.1
-    container_name: transmission
+  # Torrent client with wireguard vpn to route traffic through
+  qbittorrent:
+    image: binhex/arch-qbittorrentvpn:latest
+    container_name: qbittorrent
+    cap_add:
+      - NET_ADMIN
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=6881
+      - VPN_ENABLED=yes
+      - VPN_USER=${VPN_USER}
+      - VPN_PASS=${VPN_PASS}
+      - VPN_PROV=custom
+      - VPN_CLIENT=wireguard
+      # - VPN_OPTIONS=<additional openvpn cli options> 
+      - STRICT_PORT_FORWARD=yes
+      - ENABLE_PRIVOXY=yes
+      # - ENABLE_STARTUP_SCRIPTS=<yes|no> 
+      # - LAN_NETWORK=<lan ipv4 network>/<cidr notation> 
+      # - NAME_SERVERS=<name server ip(s)> 
+      # - VPN_INPUT_PORTS=<port number(s)> 
+      # - VPN_OUTPUT_PORTS=<port number(s)> 
+      # - DEBUG=<true|false> 
+
     volumes:
-      - ${DOCKERCONFDIR}/transmission:/config
+      - ${DOCKERCONFDIR}/qbittorrent:/config
       - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
     ports:
-      - 8003:9091
-      - 51413:51413
-      - 51413:51413/udp
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
+      - 8118:8118
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    privileged: true
     restart: unless-stopped
+
+  # Torrent client
+  # transmission:
+  #   image: lscr.io/linuxserver/transmission:latest
+  #   container_name: transmission
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #     - USER=admin #optional
+  #     - PASS=admin #optional
+  #   volumes:
+  #     - ${DOCKERCONFDIR}/transmission:/config
+  #     - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
+  #   ports:
+  #     - 9091:9091
+  #     - 51413:51413
+  #     - 51413:51413/udp
+  #   restart: unless-stopped
       
   # SABnzbd
   sabnzbd:
@@ -269,3 +322,78 @@ services:
       - /dev/dri:/dev/dri                           # optional: if you have a Syno with an Intel CPU with quicksync and want hardware transcoding (only with Plex Pass) uncomment this line.
     tmpfs:                                          # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
       - /transcode                                  # optional: if you have a Syno with enough RAM, you can uncomment this line to enable transcoding in RAM. uncomment this line.
+
+  #Transcode media lib from h264 to h265 to drastically reduce storage space
+  tdarr:
+    container_name: tdarr
+    image: ghcr.io/haveagitgat/tdarr:latest
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - 8265:8265 # webUI port
+      - 8266:8266 # server port
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK_SET=002
+      - serverIP=0.0.0.0
+      - serverPort=8266
+      - webUIPort=8265
+      - internalNode=true
+      - inContainer=true
+      - ffmpegVersion=6
+      - nodeName=MyInternalNode
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ${DOCKERCONFDIR}/tdarr/server:/app/server
+      - ${DOCKERCONFDIR}/tdarr/configs:/app/configs
+      - ${DOCKERCONFDIR}/tdarr/logs:/app/logs
+      - ${DOCKERSTORAGEDIR}/media:/media
+      - ${DOCKERCONFDIR}/tdarr/transcode_cache:/temp
+
+    devices:
+      - /dev/dri:/dev/dri
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #       - driver: nvidia
+    #         count: all
+    #         capabilities: [gpu]
+
+  # node example
+  # tdarr-node:
+  #   container_name: tdarr-node
+  #   image: ghcr.io/haveagitgat/tdarr_node:latest
+  #   restart: unless-stopped
+  #   network_mode: service:tdarr
+  #   environment:
+  #     - TZ=${TZ}
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - UMASK_SET=002
+  #     - nodeName=MyExternalNode
+  #     - serverIP=0.0.0.0
+  #     - serverPort=8266
+  #     - inContainer=true
+  #     - ffmpegVersion=6
+  #     - NVIDIA_DRIVER_CAPABILITIES=all
+  #     - NVIDIA_VISIBLE_DEVICES=all
+
+  #   volumes:
+  #     - ${DOCKERCONFDIR}/tdarr/configs:/app/configs
+  #     - ${DOCKERCONFDIR}/tdarr/logs:/app/logs
+  #     - ${DOCKERSTORAGEDIR}/media:/media
+  #     - ${DOCKERCONFDIR}/tdarr/transcode_cache:/temp
+
+  #   devices:
+  #     - /dev/dri:/dev/dri
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #         - driver: nvidia
+  #           count: all
+  #           capabilities: [gpu]
