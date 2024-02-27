@@ -240,7 +240,7 @@ services:
       - ${DOCKERCONFDIR}/qbittorrent:/config
       - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
     ports:
-      - 8080:8080
+      - 8090:8090
       - 6881:6881
       - 6881:6881/udp
     restart: unless-stopped
