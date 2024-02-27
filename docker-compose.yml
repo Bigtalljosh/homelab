@@ -137,7 +137,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/radarr:/config
       - ${DOCKERSTORAGEDIR}:/data
-    network_mode: service:vpn
     depends_on:
       - vpn
 
@@ -166,7 +165,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/sonarr:/config
       - ${DOCKERSTORAGEDIR}:/data
-    network_mode: service:vpn
     depends_on:
       - vpn
 
@@ -195,7 +193,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/bazarr:/config
       - ${DOCKERSTORAGEDIR}/media:/data/media
-    network_mode: service:vpn
     depends_on:
       - vpn
       
@@ -211,7 +208,6 @@ services:
       - ${DOCKERCONFDIR}/prowlarr:/config
     ports:
       - 9696:9696
-    network_mode: service:vpn
     depends_on:
       - vpn
     restart: unless-stopped
