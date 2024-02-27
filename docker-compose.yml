@@ -220,7 +220,7 @@ services:
       - 8090:8090 #bt
       - 6881:6881 #bt
       - 6881:6881/udp #bt
-      - 9000:9000 #usenet
+      # - 9000:9000 #usenet
       - 9090:9090 #usenet
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1  # Recomended if using ipv4 only
