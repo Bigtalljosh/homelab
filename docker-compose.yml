@@ -137,8 +137,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/radarr:/config
       - ${DOCKERSTORAGEDIR}:/data
-    depends_on:
-      - vpn
 
 # Sonarr
   sonarr:
@@ -165,8 +163,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/sonarr:/config
       - ${DOCKERSTORAGEDIR}:/data
-    depends_on:
-      - vpn
 
 # Bazarr
   bazarr:
@@ -193,8 +189,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/bazarr:/config
       - ${DOCKERSTORAGEDIR}/media:/data/media
-    depends_on:
-      - vpn
       
   # prowlarr
   prowlarr:
@@ -208,8 +202,6 @@ services:
       - ${DOCKERCONFDIR}/prowlarr:/config
     ports:
       - 9696:9696
-    depends_on:
-      - vpn
     restart: unless-stopped
 
   # Nord VPN
