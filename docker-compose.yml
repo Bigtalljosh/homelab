@@ -248,25 +248,6 @@ services:
     depends_on:
       - vpn
     restart: unless-stopped
-
-  # Torrent client
-  # transmission:
-  #   image: lscr.io/linuxserver/transmission:latest
-  #   container_name: transmission
-  #   environment:
-  #     - PUID=${PUID}
-  #     - PGID=${PGID}
-  #     - TZ=${TZ}
-  #     - USER=admin #optional
-  #     - PASS=admin #optional
-  #   volumes:
-  #     - ${DOCKERCONFDIR}/transmission:/config
-  #     - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
-  #   ports:
-  #     - 9091:9091
-  #     - 51413:51413
-  #     - 51413:51413/udp
-  #   restart: unless-stopped
       
   # SABnzbd
   sabnzbd:
@@ -283,7 +264,7 @@ services:
         - org.hotio.pullio.notify=${PULLIO_NOTIFY}
         - org.hotio.pullio.discord.webhook=${PULLIO_DISCORD_WEBHOOK}
       ports:
-        - 8080:8080
+        - 9000:9000
         - 9090:9090
       environment:
         - PUID=${PUID}
