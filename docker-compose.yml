@@ -214,7 +214,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - WEBUI_PORT=8080
+      - WEBUI_PORT=8090
       - TORRENTING_PORT=6881
       - VPN_ENABLED=yes
       - VPN_USER=${VPN_USER}
@@ -235,7 +235,7 @@ services:
       - ${DOCKERCONFDIR}/qbittorrent:/config
       - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
     ports:
-      - 8080:8080
+      - 8090:8090
       - 6881:6881
       - 6881:6881/udp
       - 8118:8118
