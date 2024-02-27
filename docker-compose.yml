@@ -205,25 +205,27 @@ services:
     restart: unless-stopped
 
   # Nord VPN
-  vpn:
-    image: ghcr.io/bubuntux/nordvpn
-    cap_add:
-      - NET_ADMIN               # Required
-      - NET_RAW                 # Required
-    environment:                # Review https://github.com/bubuntux/nordvpn#environment-variables
-      - TOKEN=${NORDVPN_TOKEN}
-      - CONNECT=United_Kingdom
-      - TECHNOLOGY=NordLynx
-      - NETWORK=192.168.1.200/24  # So it can be accessed within the local network
-    ports:
-      - 8080:8080
-      - 8090:8090 #bt
-      - 6881:6881 #bt
-      - 6881:6881/udp #bt
-      # - 9000:9000 #usenet
-      - 9090:9090 #usenet
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1  # Recomended if using ipv4 only
+  # vpn:
+  #   image: ghcr.io/bubuntux/nordvpn
+  #   cap_add:
+  #     - NET_ADMIN               # Required
+  #     - NET_RAW                 # Required
+  #   environment:                # Review https://github.com/bubuntux/nordvpn#environment-variables
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #     - TOKEN=${NORDVPN_TOKEN}
+  #     - CONNECT=United_Kingdom
+  #     - TECHNOLOGY=NordLynx
+  #   ports:
+  #     - 8080:8080
+  #     - 8090:8090 #bt
+  #     - 6881:6881 #bt
+  #     - 6881:6881/udp #bt
+  #     # - 9000:9000 #usenet
+  #     - 9090:9090 #usenet
+  #   sysctls:
+  #     - net.ipv6.conf.all.disable_ipv6=1  # Recomended if using ipv4 only
 
   # Torrent client
   qbittorrent:
@@ -237,6 +239,10 @@ services:
     volumes:
       - ${DOCKERCONFDIR}/qbittorrent:/config
       - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
+    ports:
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
     network_mode: service:vpn
     depends_on:
       - vpn
@@ -260,6 +266,8 @@ services:
         - PUID=${PUID}
         - PGID=${PGID}
         - TZ=${TZ}
+      ports:
+      - 8080:8080
       volumes:
         - /etc/localtime:/etc/localtime:ro
         - ${DOCKERCONFDIR}/sabnzbd:/config
