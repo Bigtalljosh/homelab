@@ -11,6 +11,8 @@ services:
       - ${DOCKERCONFDIR}/homarr/configs:/app/data/configs
       - ${DOCKERCONFDIR}/homarr/icons:/app/public/icons
       - ${DOCKERCONFDIR}/homarr/data:/appdata
+    environment:
+      - SECRET_ENCRYPTION_KEY=${HOMARR_SECRET}
     ports:
       - '7575:7575'
 
