@@ -4,13 +4,13 @@ services:
   # Dashboard for all these apps
   homarr:
     container_name: homarr
-    image: ghcr.io/ajnart/homarr:latest
+    image: ghcr.io/homarr-labs/homarr:latest
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Optional, only if you want docker integration
       - ${DOCKERCONFDIR}/homarr/configs:/app/data/configs
       - ${DOCKERCONFDIR}/homarr/icons:/app/public/icons
-      - ${DOCKERCONFDIR}/homarr/data:/data
+      - ${DOCKERCONFDIR}/homarr/data:/appdata
     ports:
       - '7575:7575'
 
@@ -97,20 +97,6 @@ services:
   #     - 80:80
   #     - 4001:4001 #optional
   #   restart: unless-stopped
-
-  #yt dl
-  youtube-dl:
-    image: tzahi12345/youtubedl-material:latest
-    container_name: youtube-dl
-    ports:
-        - 8084:17442
-    volumes:
-        - ${DOCKERCONFDIR}/youtubedl/appdata:/app/appdata
-        - ${DOCKERCONFDIR}/youtubedl/audio:/app/audio
-        - ${DOCKERCONFDIR}/youtubedl/subscriptions:/app/subscriptions
-        - ${DOCKERCONFDIR}/youtubedl/users:/app/users
-        - ${DOCKERCONFDIR}/youtubedl/video:/app/video
-    restart: unless-stopped
 
 # Radarr
   radarr:
@@ -203,29 +189,6 @@ services:
     ports:
       - 9696:9696
     restart: unless-stopped
-
-  # Nord VPN
-  # vpn:
-  #   image: ghcr.io/bubuntux/nordvpn
-  #   cap_add:
-  #     - NET_ADMIN               # Required
-  #     - NET_RAW                 # Required
-  #   environment:                # Review https://github.com/bubuntux/nordvpn#environment-variables
-  #     - PUID=${PUID}
-  #     - PGID=${PGID}
-  #     - TZ=${TZ}
-  #     - TOKEN=${NORDVPN_TOKEN}
-  #     - CONNECT=United_Kingdom
-  #     - TECHNOLOGY=NordLynx
-  #   ports:
-  #     - 8080:8080
-  #     - 8090:8090 #bt
-  #     - 6881:6881 #bt
-  #     - 6881:6881/udp #bt
-  #     # - 9000:9000 #usenet
-  #     - 9090:9090 #usenet
-  #   sysctls:
-  #     - net.ipv6.conf.all.disable_ipv6=1  # Recomended if using ipv4 only
 
   # Torrent client
   qbittorrent:
