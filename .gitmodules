@@ -1,0 +1,3 @@
+[submodule "appflowy"]
+	path = appflowy
+	url = https://github.com/AppFlowy-IO/AppFlowy-Cloud.git

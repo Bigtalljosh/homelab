@@ -12,14 +12,21 @@ it to `/volume1/docker/stacks` and each subfolder becomes a Dockge-managed stack
 /volume1/docker/stacks/        <- this repo (DOCKGE_STACKS_DIR)
 ├── dockge/      compose.yaml           Dockge itself (UI on :5001)
 ├── media/       compose.yaml + .env    plex, sonarr, radarr, bazarr, prowlarr,
-│                                       qbittorrent, sabnzbd, tdarr, seerr
+│                                       qbittorrent, sabnzbd, tdarr, seerr, suggestarr
 ├── immich/      compose.yaml + .env    immich-server, immich-machine-learning, redis, postgres
-└── home/        compose.yaml + .env    home assistant
+├── home/        compose.yaml + .env    home assistant
+└── appflowy/    (git submodule)        AppFlowy-Cloud — 10 containers, own nginx/pg/redis/minio
 ```
 
 Each stack has its own `.env`. Some global values (`PUID`, `PGID`, `TZ`, `DOCKERCONFDIR`,
 `DOCKERSTORAGEDIR`) are intentionally duplicated across the stack `.env` files — keep them
 in sync if you change them.
+
+**`appflowy/` is a git submodule** pinned to AppFlowy-Cloud release `0.9.64`. After cloning
+this repo run `git submodule update --init`. It's a heavyweight, self-contained stack with
+its own bundled Postgres/Redis/MinIO/nginx (claims ports 80/443) — see the setup notes in
+[MIGRATION.md](MIGRATION.md). Update later with:
+`git -C appflowy fetch --tags && git -C appflowy checkout <newtag>`.
 
 ## Config & data shares
 
@@ -55,5 +62,7 @@ cd /volume1/docker/stacks/home   && docker compose up -d
 | SABnzbd        | 8080  | media  |
 | Tdarr          | 8265  | media  |
 | Seerr          | 5055  | media  |
+| SuggestArr     | 5000  | media  |
 | Immich         | 2283  | immich |
 | Home Assistant | 8123  | home   |
+| AppFlowy       | 80/443| appflowy |

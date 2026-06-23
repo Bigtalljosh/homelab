@@ -170,6 +170,7 @@ services:
       - /transcode
 
   #Transcode media lib from h264 to h265 to drastically reduce storage space
+  # tdarr = server/UI only (internalNode=false). Actual transcoding is done by tdarr-node below.
   tdarr:
     container_name: tdarr
     image: ghcr.io/haveagitgat/tdarr:latest
@@ -183,20 +184,46 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - UMASK_SET=002
-      - serverIP=0.0.0.0
+      - serverIP=0.0.0.0          # bind on all interfaces so the node can reach the server
       - serverPort=8266
       - webUIPort=8265
-      - internalNode=true
+      - internalNode=false        # no built-in node — the dedicated tdarr-node does the work
       - inContainer=true
-      - ffmpegVersion=6
-      - nodeName=MyInternalNode
+      - ffmpegVersion=7
     volumes:
       - ${DOCKERCONFDIR}/tdarr/server:/app/server
       - ${DOCKERCONFDIR}/tdarr/configs:/app/configs
       - ${DOCKERCONFDIR}/tdarr/logs:/app/logs
       - ${DOCKERSTORAGEDIR}/media:/media
       - ${DOCKERCONFDIR}/tdarr/transcode_cache:/temp
-    devices:                        # UGREEN AMD Radeon iGPU for VAAPI transcoding
+
+  # Tdarr node — the worker that actually transcodes (shares the server's network namespace)
+  tdarr-node:
+    container_name: tdarr-node
+    image: ghcr.io/haveagitgat/tdarr_node:latest
+    restart: unless-stopped
+    network_mode: service:tdarr   # share tdarr's netns → server is reachable on localhost
+    depends_on:
+      - tdarr
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK_SET=002
+      - nodeName=UgreenNode
+      - serverIP=127.0.0.1        # server is on localhost thanks to the shared netns above
+      - serverPort=8266
+      - inContainer=true
+      - ffmpegVersion=7           # must match the server's ffmpegVersion
+      - nodeType=mapped
+    volumes:
+      # Paths MUST match the server's mounts (same host path → same /media, /temp) so a
+      # "mapped" node resolves file paths identically. Note: no /app/server (server-only).
+      - ${DOCKERCONFDIR}/tdarr/configs:/app/configs
+      - ${DOCKERCONFDIR}/tdarr/logs:/app/logs
+      - ${DOCKERSTORAGEDIR}/media:/media
+      - ${DOCKERCONFDIR}/tdarr/transcode_cache:/temp
+    devices:                      # UGREEN AMD Radeon iGPU for VAAPI transcoding
       - /dev/dri:/dev/dri
 
   # seerr for media discovery (successor to overseerr; auto-migrates the old config on first boot)
@@ -214,3 +241,17 @@ services:
       # owned 1000:1000 (see ../MIGRATION.md), unlike the rest of the stack.
       - ${DOCKERCONFDIR}/seerr:/app/config
     restart: unless-stopped
+
+  # SuggestArr — auto-requests recommended content via Seerr based on Plex watch history
+  suggestarr:
+    image: ciuse99/suggestarr:latest
+    container_name: suggestarr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - LOG_LEVEL=info
+      - SUGGESTARR_PORT=5000
+    ports:
+      - 5000:5000
+    volumes:
+      - ${DOCKERCONFDIR}/suggestarr:/app/config/config_files

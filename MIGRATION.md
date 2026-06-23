@@ -168,3 +168,54 @@ See https://hotio.dev/pullio/. If you don't set this up, the labels are harmless
 ## 9. Decommission Synology
 Once everything is verified healthy on the UGREEN for a few days, you can retire the
 Synology / its single Portainer container.
+
+---
+
+## New apps (not part of the Synology migration)
+
+## SuggestArr (in the `media` stack)
+Single lightweight container (`ciuse99/suggestarr:latest`, UI on `:5000`) that auto-requests
+recommended content via Seerr based on Plex watch history. No DB of its own. After the media
+stack is up, open `http://<ugreen-ip>:5000` and point it at your Plex + Seerr URLs/API keys.
+
+## 10. AppFlowy (optional, heavy stack)
+AppFlowy self-hosting = the **AppFlowy-Cloud** project: ~10 containers with its **own**
+bundled Postgres (pgvector), Redis, MinIO, GoTrue auth, and **nginx that claims ports 80
+and 443**. It does *not* share Immich's database. It's the heaviest thing here — RAM-bound;
+comfortable at 16 GB+, tight at 8 GB alongside Immich + Plex. The optional `ai` service is
+heavier still and only useful if you wire up an LLM provider.
+
+It's vendored as a **git submodule** at `appflowy/`, pinned to release `0.9.64` (so the
+compose + nginx config are reproducible; the images themselves still float to their tags).
+
+Setup:
+
+```bash
+# 0. (fresh clone of this repo only) pull the submodule
+git submodule update --init appflowy
+
+# 1. Create the env file from AppFlowy's template and edit it
+cd /volume1/docker/stacks/appflowy
+cp deploy.env .env
+#   In .env set at minimum:
+#   - FQDN / scheme (your domain, e.g. appflowy.joshisaweso.me, or the LAN IP for a trial)
+#   - APPFLOWY_GOTRUE_* admin email + a strong password
+#   - GOTRUE_SMTP_* (host/user/pass/sender) so signup/confirmation emails work
+#   - random secrets for Postgres, MinIO, JWT, etc. (don't leave defaults in production)
+
+# 2. Make sure ports 80/443 are free (you already removed swag, so they should be)
+
+# 3. Bring it up (or use the Dockge UI — it appears as the 'appflowy' stack)
+docker compose pull && docker compose up -d
+docker compose ps
+```
+
+Notes:
+- The submodule's `.env` is ignored by AppFlowy's own `.gitignore`, so your secrets are **not**
+  committed. Keep it that way.
+- For real use behind your domain you'll want TLS. Either let AppFlowy's nginx terminate it
+  (configure certs per their guide) or front the whole NAS with a separate reverse proxy and
+  remap AppFlowy off 80/443.
+- Upgrade later: `git -C appflowy fetch --tags && git -C appflowy checkout <newtag>`, then
+  `docker compose pull && up -d` in the stack. Commit the submodule bump in this repo.
+- Full guide: https://appflowy.com/docs/Step-by-step-Self-Hosting-Guide---From-Zero-to-Production
