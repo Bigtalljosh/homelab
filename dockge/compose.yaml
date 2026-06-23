@@ -1,0 +1,16 @@
+services:
+  dockge:
+    image: louislam/dockge:1
+    container_name: dockge
+    restart: unless-stopped
+    ports:
+      - 5001:5001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      # The stacks directory. This MUST be mounted at the SAME path on host and in the
+      # container (Dockge shells out to `docker compose`, so paths have to resolve identically).
+      - /volume1/docker/stacks:/volume1/docker/stacks
+    environment:
+      # Must match the stacks mount path above on both sides.
+      - DOCKGE_STACKS_DIR=/volume1/docker/stacks
