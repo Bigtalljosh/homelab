@@ -166,6 +166,9 @@ services:
       - ${DOCKERSTORAGEDIR}/media:/data/media:rw
     devices:                                        # UGREEN AMD Ryzen + Radeon: VAAPI hardware transcoding (Plex Pass)
       - /dev/dri:/dev/dri                           # passes the Radeon iGPU through for HW transcode
+    group_add:                                      # grant access to the GPU device groups (UGOS host GIDs)
+      - "105"                                       # render group -> /dev/dri/renderD128 (VAAPI)
+      - "44"                                        # video group  -> /dev/dri/card0
     tmpfs:                                          # transcode in RAM (UGREEN has plenty); remove if low on memory
       - /transcode
 
@@ -225,6 +228,9 @@ services:
       - ${DOCKERCONFDIR}/tdarr/transcode_cache:/temp
     devices:                      # UGREEN AMD Radeon iGPU for VAAPI transcoding
       - /dev/dri:/dev/dri
+    group_add:                    # grant access to the GPU device groups (UGOS host GIDs)
+      - "105"                     # render group -> /dev/dri/renderD128 (VAAPI)
+      - "44"                      # video group  -> /dev/dri/card0
 
   # seerr for media discovery (successor to overseerr; auto-migrates the old config on first boot)
   seerr:

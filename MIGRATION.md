@@ -45,14 +45,14 @@ Recreate the data subfolder structure (the arr stack expects this):
 ```
 
 ## 2. Get your new PUID / PGID  ← the #1 gotcha
-On Synology your user was `1026:100`. On UGOS it's different. Enable SSH in UGOS, then:
-```bash
-ssh youruser@<ugreen-ip>
-id youruser
-# e.g. uid=1000(youruser) gid=10(wheel) groups=...
+On Synology your user was `1026:100`. On UGOS, `id bigtalljosh` gives:
 ```
-Put those numbers into the `PUID` / `PGID` of **each stack's `.env`** (`media/.env`,
-`home/.env` — keep them in sync).
+uid=1000(bigtalljosh) gid=10(admin) groups=10(admin),100(users),133(ughomeusers)
+```
+Use **PUID=1000** and **PGID=100** — i.e. the `users` group, *not* the primary `admin`
+group (10). `users` is the standard shared group and is the same GID 100 as Synology, so
+migrated files keep a valid group and only the UID needs fixing. These are already set in
+`media/.env` and `home/.env`.
 
 ## 3. Copy the data (preserve permissions AND hardlinks)
 From a machine that can see both NAS boxes — easiest is to run this **on the UGREEN over
@@ -72,11 +72,13 @@ rsync -aHAX --info=progress2 root@<synology-ip>:/volume1/data/    /volume1/data/
 > is mid-write while you copy. Immich's Postgres especially must be copied cold.
 
 ## 4. Fix ownership to the new IDs
-After copying, everything is still owned by the old Synology IDs. Chown to your new ones
-(replace `1000:10` with what `id` returned):
+After copying, files are still owned by the old Synology UID (`1026`). Re-own them to
+`1000:100` (your UGOS uid + the `users` group):
 ```bash
-sudo chown -R 1000:10 /volume1/docker
-sudo chown -R 1000:10 /volume1/data
+sudo chown -R 1000:100 /volume1/docker
+sudo chown -R 1000:100 /volume1/data
+# Seerr is the exception — it runs as UID 1000:1000 and ignores PUID/PGID:
+sudo chown -R 1000:1000 /volume1/docker/seerr
 ```
 Note: Immich's Postgres data dir (`/volume1/data/immich/postgres`) needs to stay readable
 by the postgres container — the chown above covers it since the container runs as root and
