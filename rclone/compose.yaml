@@ -1,0 +1,43 @@
+services:
+
+  # rclone remote-control daemon. This is the SERVER half — the Rclone UI desktop app
+  # (https://rclone.ui / github.com/rclone-ui/rclone-ui) is installed on your Mac and
+  # connects to it at http://<nas-ip>:5572. Transfers then run ON THE NAS, so data goes
+  # straight to /volume2 instead of being relayed through the client.
+  #
+  # Why this exists: UGOS's built-in Cloud Drive integration pulls with almost no
+  # concurrency, and a single TCP stream to Backblaze (~200ms RTT) tops out around
+  # 70-80 Mbps regardless of your gigabit line. --transfers gives you N parallel streams;
+  # 16 of them saturate the link.
+  rclone:
+    image: rclone/rclone:latest
+    container_name: rclone
+    restart: unless-stopped
+    # runs as your NAS user so downloaded files land owned 1000:100, not root
+    user: "${PUID}:${PGID}"
+    command: >
+      rcd
+      --rc-addr=:5572
+      --rc-user=${RCLONE_USER}
+      --rc-pass=${RCLONE_PASS}
+      --rc-allow-origin=*
+      --transfers=${RCLONE_TRANSFERS}
+      --checkers=${RCLONE_CHECKERS}
+      --fast-list
+      --stats=5s
+      --log-level=INFO
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      # rclone.conf (your Backblaze remote + credentials) lives here — NOT in this repo
+      - ${DOCKERCONFDIR}/rclone:/config/rclone
+      # the destination tree. rclone sees it as /data — same layout as the *arr stack.
+      - ${DOCKERSTORAGEDIR}:/data
+    ports:
+      - 5572:5572
+    logging:
+      driver: json-file
+      options:
+        max-file: ${DOCKERLOGGING_MAXFILE}
+        max-size: ${DOCKERLOGGING_MAXSIZE}

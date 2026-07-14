@@ -1,223 +1,173 @@
-# Synology → UGREEN migration guide
+# Migration notes
 
-Migrating this Docker stack from the old Synology NAS (Portainer-managed) to the new
-UGREEN NAS (UGOS Pro). Good news: UGOS mounts shared folders at `/volume1/<share>` just
-like Synology, so if you recreate shares named **`docker`** and **`data`**, every volume
-path in the compose files stays identical. The real work is **file ownership** and
-**copying data with hardlinks intact**.
+Two migrations have happened. The second one is the one you'll learn from.
 
----
+1. **Synology (Portainer) → UGREEN (Dockge)** — done. Repo restructured into per-stack
+   folders, Overseerr replaced by Seerr, PUID/PGID moved to `1000:100`.
+2. **UGREEN `/volume1` → `/volume2`** — done. Moved everything onto the redundant 10 TB
+   RAID1 pool. 116 GB of Immich data (25,924 assets) and the Home Assistant config were
+   copied; volume1's shares were then deleted.
 
-## 0. What changed in the repo
-- **Now managed by [Dockge](https://dockge.kuma.pet/)** instead of Portainer. This repo is
-  the Dockge stacks directory (deploy to `/volume1/docker/stacks`). See [README.md](README.md).
-- **Split the single compose into 3 stacks** + Dockge itself:
-  - `media/`  — plex, sonarr, radarr, bazarr, prowlarr, qbittorrent, sabnzbd, tdarr, seerr
-  - `immich/` — immich-server, immich-machine-learning, redis, postgres
-  - `home/`   — home assistant
-  - `dockge/` — Dockge (UI on :5001)
-- Removed dead/commented services: `recyclarr`, `swag`, `emulatorjs`, `tdarr-node`.
-- Removed `homarr` (you don't want it).
-- Removed obsolete `version: "3.8"` top key.
-- **Overseerr → Seerr** (`ghcr.io/seerr-team/seerr`) — see step 7b.
-- **Tdarr**: stripped NVIDIA env vars (you have an AMD Radeon iGPU, not NVIDIA). Kept
-  `/dev/dri` for VAAPI hardware transcoding.
-- **Plex**: kept `/dev/dri` — now via **VAAPI** (AMD Ryzen R2514 + Radeon), not QuickSync.
-- Each stack has its own `.env`; PUID/PGID flagged as needing new UGOS values.
+Everything below is what actually bit us, so it doesn't bite again.
 
 ---
 
-## 1. On the UGREEN: create the shared folders
-In UGOS, create two shared folders (exact names matter — they become the mount paths):
-- **`docker`** → mounts at `/volume1/docker` (all app config)
-- **`data`**   → mounts at `/volume1/data` (media + downloads, TRaSH hardlink layout)
+## The rules that matter (irreplaceable data)
 
-Put both on the **same volume/pool** so hardlinks between `/data/torrents`, `/data/usenet`
-and `/data/media` keep working (hardlinks can't cross filesystems).
+- **Never** `docker compose down -v`, **never** `docker volume rm`. Stop with
+  `docker stop` / `docker compose stop|down`.
+- **Copy, never move.** `rsync` without `--delete`. Keep the source until the new copy is
+  verified healthy — days, not minutes. Deleting the old copy is the *last* step.
+- **Stop the containers before copying.** A live Postgres cluster or a hot SQLite WAL copies
+  torn and won't start. `deploy.sh` stops everything first for exactly this reason.
+- Dry-run first. `deploy.sh` does nothing without `CONFIRM=1`.
 
-Recreate the data subfolder structure (the arr stack expects this):
+## Traps we hit (in the order they bit)
+
+**1. `rsync -aHAX` fails on UGOS.** The bundled rsync 3.4.1 is built with **`no ACLs`** and
+errors out immediately: `ACLs are not supported on this client`. Use **`-aHX`**. Check with
+`rsync --version | grep -i acl`.
+
+**2. A new `DB_PASSWORD` silently breaks Immich.** Postgres only applies `POSTGRES_PASSWORD`
+when it initialises an **empty** data dir. Copying an existing cluster and setting a fresh
+password leaves the old password in place, and `immich-server` can't authenticate — the
+photos look "missing" even though every file copied fine. **Carry the existing value across.**
+
+**3. Home Assistant's config lives under `DOCKERCONFDIR`.** Migrating only the Immich data
+would have started HA against an empty `/config` and onboarded it from scratch. `deploy.sh`
+now copies `<conf>/homeassistant` too. Its SQLite DB must be copied cold.
+
+**4. Dockge keeps managing the *old* stacks dir.** It bind-mounts the stacks path, so a
+running Dockge container has to be **recreated**, not left alone, or it keeps pointing at the
+old volume. `deploy.sh` now force-recreates it.
+
+**5. `hotio/sabnzbd` doesn't exist on Docker Hub.** hotio publishes to GHCR
+(`ghcr.io/hotio/sabnzbd`). The failed pull aborted `deploy.sh` under `set -e`, which meant the
+`home` stack silently never started.
+
+**6. Seerr crash-loops on `EACCES`.** It runs hardcoded as `1000:1000`. If its config dir
+doesn't exist at chown time, Compose creates it as root at `up` time and Seerr dies writing
+`/app/config/logs`. `deploy.sh` now `mkdir`s it *before* chowning.
+
+**7. Starting 12 containers at once wedged the NAS.** Tdarr and Plex begin scanning
+immediately; on top of a just-finished 124 GB rsync, load hit 12.8 and Home Assistant's init
+stalled in uninterruptible disk-wait for 10+ minutes. It wasn't broken — it was starved. Bring
+heavy stacks up one at a time, and leave Tdarr stopped until there's media to transcode.
+
+**8. UGOS shared folders vs. plain directories.** This is the big one — see below.
+
+## UGOS shared folders
+
+**A directory you create with `mkdir`/`rsync` is not a shared folder.** UGOS only knows about
+folders created through its UI (Files → Shared Folder → `+`). Those get ACLs — you can spot them
+by the trailing `+` in `ls -l` (`drwxrwxrwx+`). Raw directories don't appear in File Manager, can't
+be shared over SMB, and are invisible to UGOS's snapshot/backup tooling. Docker doesn't care,
+which is why everything ran fine while being completely unbrowsable.
+
+Shared-folder **names are unique across the NAS**, so you can't have `data` on volume1 and
+`data` on volume2 at the same time. To re-home a share onto another volume:
+
+1. Delete the old share in the UI (**this deletes its contents**).
+2. Stop the stacks. Rename the raw dir aside: `/volume2/data` → `/volume2/data.tmp`.
+3. Create the share properly in the UI — UGOS makes it empty, with ACLs.
+4. Move the contents back in. Same filesystem, so it's an instant rename, not a copy, even
+   at 116 GB.
+5. Recreate the stacks (see below) and delete the `.tmp` dir.
+
+**After the move, UGOS flattens everything under the share to `0777`** — including Immich's
+Postgres data dir, which PostgreSQL will not run on. It self-heals *only* because the Postgres
+entrypoint runs `chmod 700` on `$PGDATA` — and that happens on container **creation**. So:
+
+> After any share-level permission change, **`docker compose up -d --force-recreate`** the
+> Immich stack. A plain `start` reuses the old mount namespace, and Postgres comes up seeing
+> mode `000` and dies with `could not open file "global/pg_filenode.map": Permission denied`.
+
+## PUID / PGID
+
+`id bigtalljosh` on UGOS:
+
 ```
-/volume1/data/
-├── media/        # movies, tv, etc (Plex/Sonarr/Radarr library)
-├── torrents/     # qbittorrent downloads
-├── usenet/       # sabnzbd downloads
-└── immich/       # immich uploads + immich/postgres
+uid=1000(bigtalljosh) gid=10(admin) groups=10(admin),100(users),121(docker),133(ughomeusers)
 ```
 
-## 2. Get your new PUID / PGID  ← the #1 gotcha
-On Synology your user was `1026:100`. On UGOS, `id bigtalljosh` gives:
-```
-uid=1000(bigtalljosh) gid=10(admin) groups=10(admin),100(users),133(ughomeusers)
-```
-Use **PUID=1000** and **PGID=100** — i.e. the `users` group, *not* the primary `admin`
-group (10). `users` is the standard shared group and is the same GID 100 as Synology, so
-migrated files keep a valid group and only the UID needs fixing. These are already set in
-`media/.env` and `home/.env`.
+Use **`PUID=1000`, `PGID=100`** — the shared `users` group, *not* the primary `admin` group
+(10). GID 100 matches Synology's `users`, so migrated files keep a valid group.
 
-## 3. Copy the data (preserve permissions AND hardlinks)
-From a machine that can see both NAS boxes — easiest is to run this **on the UGREEN over
-SSH**, pulling from the Synology. The `-H` flag is critical: without it, hardlinked files
-get copied as separate full copies and your disk usage can balloon.
+Exceptions: **Seerr** → `1000:1000`. **Immich Postgres** → uid `999`, mode `0700`, don't touch.
+
+You're in the `docker` group (121), so `docker` works without `sudo`. **`sudo` itself requires a
+password** and can't run non-interactively over SSH — use `ssh -t <nas> 'sudo …'`. Where root is
+only needed for file ownership, a throwaway container avoids the prompt entirely:
 
 ```bash
-# config (small, fast)
-rsync -aHAX --info=progress2 root@<synology-ip>:/volume1/docker/  /volume1/docker/
-
-# media + downloads (large, slow — run in a screen/tmux session)
-rsync -aHAX --info=progress2 root@<synology-ip>:/volume1/data/    /volume1/data/
-```
-`-a` preserves perms/times/symlinks, `-H` preserves hardlinks, `-A -X` preserve ACLs/xattrs.
-
-> Stop the stack on the Synology first (or at least Plex/arr/immich-postgres) so nothing
-> is mid-write while you copy. Immich's Postgres especially must be copied cold.
-
-## 4. Fix ownership to the new IDs
-After copying, files are still owned by the old Synology UID (`1026`). Re-own them to
-`1000:100` (your UGOS uid + the `users` group):
-```bash
-sudo chown -R 1000:100 /volume1/docker
-sudo chown -R 1000:100 /volume1/data
-# Seerr is the exception — it runs as UID 1000:1000 and ignores PUID/PGID:
-sudo chown -R 1000:1000 /volume1/docker/seerr
-```
-Note: Immich's Postgres data dir (`/volume1/data/immich/postgres`) needs to stay readable
-by the postgres container — the chown above covers it since the container runs as root and
-maps the volume directly; leave that folder owned consistently, don't single it out.
-
-## 5. Verify hardware transcoding device exists
-```bash
-ls -l /dev/dri      # expect renderD128 (+ card0). That's the Radeon iGPU for VAAPI.
-```
-If `/dev/dri` is missing, remove the `devices:` block from `plex` and `tdarr` or they won't
-start. Plex HW transcode needs **Plex Pass**; first transcode, check Tautulli/logs say
-`(hw)`.
-
-## 6. Deploy with Dockge and bring the stacks up
-Clone this repo to the stacks dir so the paths line up with Dockge's config:
-```bash
-git clone <your-repo-url> /volume1/docker/stacks
-cd /volume1/docker/stacks
+docker run --rm -v /volume2/docker/seerr:/x alpine chown -R 1000:1000 /x
 ```
 
-Start Dockge first (it manages everything else):
-```bash
-cd /volume1/docker/stacks/dockge
-docker compose up -d
-# Open http://<ugreen-ip>:5001 — you'll see media/, immich/, home/ listed as stacks.
-```
-> The stacks dir is bind-mounted into Dockge at the **identical path**
-> (`/volume1/docker/stacks:/volume1/docker/stacks`) and `DOCKGE_STACKS_DIR` matches it.
-> Don't change one without the other or Dockge can't drive `docker compose`.
+## Verifying a data copy
 
-Then start each stack — from the Dockge UI (Start button), or the CLI:
-```bash
-for s in media immich home; do
-  (cd /volume1/docker/stacks/$s && docker compose pull && docker compose up -d)
-done
-docker ps        # sanity check everything is Up / healthy
-```
-After this, manage/update/restart each stack from the Dockge UI.
-
-## 7. Per-app sanity checks
-- **Plex** (`:32400`): library should appear as-is. If it asks to claim, regenerate
-  `PLEX_CLAIM_TOKEN` at https://plex.tv/claim, paste into `.env`, `up -d` Plex once, then
-  blank it again. Update `PLEX_ADVERTISE_URL` in `.env` to the UGREEN's LAN IP.
-- **Sonarr/Radarr** (`:8989`/`:7878`): check Settings → Media Management root folders still
-  point at `/data/...` and downloads import. Hardlinks (not copy) confirm same-filesystem.
-- **qbittorrent** (`:8090`) / **sabnzbd** (`:8080`): verify save paths under `/data/...`.
-- **Prowlarr** (`:9696`) / **Bazarr** (`:6767`): just confirm UI loads.
-- **Seerr** (`:5055`): see step 7b below — it replaces Overseerr.
-- **Immich** (`:2283`): wait for Postgres to come up healthy; log in, confirm photos +
-  thumbnails. If DB won't start, the Postgres copy was likely hot — recopy cold.
-- **Home Assistant** (`:8123`): runs `network_mode: host` — confirm it binds.
-- **Tdarr** (`:8265`): confirm the internal node sees `/dev/dri` and uses VAAPI in flows.
-
-## 7b. Overseerr → Seerr
-Overseerr is replaced by **Seerr** (`ghcr.io/seerr-team/seerr`). It auto-migrates your
-existing Overseerr config (DB, settings, requests) on first boot — no manual DB migration.
-Two things differ from the rest of the stack:
-
-1. **It runs hardcoded as UID 1000 and ignores PUID/PGID.** Its config dir must be owned
-   `1000:1000`, not your NAS user.
-2. The compose service has `init: true` (the image no longer ships its own init).
-
-Steps:
+`docker compose ps` going green proves nothing about your data. What to actually check:
 
 ```bash
-# 1. Move the old Overseerr config into the new seerr folder (reuse it so it auto-migrates)
-mv /volume1/docker/overseerr /volume1/docker/seerr      # or rsync if you copied it as 'overseerr'
+# asset count must match the pre-migration number
+docker exec immich_postgres psql -U postgres -d immich -tAc 'select count(*) from asset'
 
-# 2. Back it up first (rollback safety)
-cp -a /volume1/docker/seerr /volume1/docker/seerr.bak
-
-# 3. Fix ownership to UID 1000 (Seerr requirement)
-docker run --rm -v /volume1/docker/seerr:/data alpine chown -R 1000:1000 /data
-
-# 4. Start it (from the media stack)
-cd /volume1/docker/stacks/media
-docker compose up -d seerr
-docker compose logs -f seerr      # watch it report the migration on first boot
+# file counts + byte totals, read from a root container (the dirs are 0700 — your user gets
+# permission-denied and silently reports 0 files)
+docker run --rm -v /old/immich:/src:ro -v /new/immich:/dst:ro alpine sh -c '
+  for d in library upload thumbs profile; do
+    echo "$d: $(find /src/$d -type f | wc -l) vs $(find /dst/$d -type f | wc -l)"
+  done'
 ```
 
-If anything goes wrong, stop seerr, restore `seerr.bak`, and roll back to the old
-`sctx/overseerr:latest` image. Ref: https://docs.seerr.dev/migration-guide/#unix
+Expect `encoded-video` to be **larger** on the new copy — Immich re-transcodes in the
+background. Expect small byte-total deltas on directories (fresh dirs have a different
+`st_size`); file *counts* are what must match exactly.
 
-## 8. Pullio auto-update (optional)
-The hotio `pullio.*` labels need the Pullio script + a scheduled cron on the host. UGOS has
-a Task Scheduler — create a scheduled task running the Pullio script instead of Synology's.
-See https://hotio.dev/pullio/. If you don't set this up, the labels are harmless no-ops.
+## Hardware transcoding
 
-## 9. Decommission Synology
-Once everything is verified healthy on the UGREEN for a few days, you can retire the
-Synology / its single Portainer container.
+```bash
+ls -l /dev/dri      # expect renderD128 (+ card0) — the Radeon iGPU for VAAPI
+```
+
+Plex and Tdarr use `/dev/dri` with `group_add: [105, 44]`. Plex HW transcode needs Plex Pass.
+If `/dev/dri` is missing, drop the `devices:` block or those containers won't start.
 
 ---
 
-## New apps (not part of the Synology migration)
+## Reference: Overseerr → Seerr
 
-## SuggestArr (in the `media` stack)
-Single lightweight container (`ciuse99/suggestarr:latest`, UI on `:5000`) that auto-requests
-recommended content via Seerr based on Plex watch history. No DB of its own. After the media
-stack is up, open `http://<ugreen-ip>:5000` and point it at your Plex + Seerr URLs/API keys.
-
-## 10. AppFlowy (optional, heavy stack)
-AppFlowy self-hosting = the **AppFlowy-Cloud** project: ~10 containers with its **own**
-bundled Postgres (pgvector), Redis, MinIO, GoTrue auth, and **nginx that claims ports 80
-and 443**. It does *not* share Immich's database. It's the heaviest thing here — RAM-bound;
-comfortable at 16 GB+, tight at 8 GB alongside Immich + Plex. The optional `ai` service is
-heavier still and only useful if you wire up an LLM provider.
-
-It's vendored as a **git submodule** at `appflowy/`, pinned to release `0.9.64` (so the
-compose + nginx config are reproducible; the images themselves still float to their tags).
-
-Setup:
+Seerr (`ghcr.io/seerr-team/seerr`) auto-migrates an existing Overseerr config (DB, settings,
+requests) on first boot. It runs hardcoded as UID 1000 and the compose service needs
+`init: true`. Reuse the old config dir so the migration triggers:
 
 ```bash
-# 0. (fresh clone of this repo only) pull the submodule
+mv <conf>/overseerr <conf>/seerr
+cp -a <conf>/seerr <conf>/seerr.bak                          # rollback
+docker run --rm -v <conf>/seerr:/data alpine chown -R 1000:1000 /data
+cd /volume2/docker/stacks/media && docker compose up -d seerr && docker compose logs -f seerr
+```
+
+Ref: https://docs.seerr.dev/migration-guide/#unix
+
+## Reference: AppFlowy (submodule, not deployed)
+
+AppFlowy self-hosting = **AppFlowy-Cloud**: ~10 containers with its own bundled Postgres
+(pgvector), Redis, MinIO, GoTrue auth, and an **nginx that claims ports 80/443**. It does not
+share Immich's database. RAM-bound — comfortable at 16 GB+, tight at 8 GB alongside Immich +
+Plex. Vendored as a git submodule pinned to release `0.9.64`.
+
+```bash
 git submodule update --init appflowy
-
-# 1. Create the env file from AppFlowy's template and edit it
-cd /volume1/docker/stacks/appflowy
-cp deploy.env .env
-#   In .env set at minimum:
-#   - FQDN / scheme (your domain, e.g. appflowy.joshisaweso.me, or the LAN IP for a trial)
-#   - APPFLOWY_GOTRUE_* admin email + a strong password
-#   - GOTRUE_SMTP_* (host/user/pass/sender) so signup/confirmation emails work
-#   - random secrets for Postgres, MinIO, JWT, etc. (don't leave defaults in production)
-
-# 2. Make sure ports 80/443 are free (you already removed swag, so they should be)
-
-# 3. Bring it up (or use the Dockge UI — it appears as the 'appflowy' stack)
+cd /volume2/docker/stacks/appflowy
+cp deploy.env .env      # set FQDN, GOTRUE admin creds, SMTP, and fresh secrets
 docker compose pull && docker compose up -d
-docker compose ps
 ```
 
-Notes:
-- The submodule's `.env` is ignored by AppFlowy's own `.gitignore`, so your secrets are **not**
-  committed. Keep it that way.
-- For real use behind your domain you'll want TLS. Either let AppFlowy's nginx terminate it
-  (configure certs per their guide) or front the whole NAS with a separate reverse proxy and
-  remap AppFlowy off 80/443.
-- Upgrade later: `git -C appflowy fetch --tags && git -C appflowy checkout <newtag>`, then
-  `docker compose pull && up -d` in the stack. Commit the submodule bump in this repo.
-- Full guide: https://appflowy.com/docs/Step-by-step-Self-Hosting-Guide---From-Zero-to-Production
+The submodule's `.env` is gitignored by AppFlowy, so secrets aren't committed — keep it that
+way. Upgrade with `git -C appflowy fetch --tags && git -C appflowy checkout <newtag>`, then
+commit the submodule bump here.
+
+## Pullio auto-update (optional)
+
+The hotio `pullio.*` labels need the Pullio script plus a scheduled task — UGOS has a Task
+Scheduler. See https://hotio.dev/pullio/. Without it the labels are harmless no-ops.
